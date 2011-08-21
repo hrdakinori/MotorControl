@@ -1,9 +1,15 @@
 package com.hrdapp.android.MotorControl;
 
+import java.util.Timer;
+import java.util.TimerTask;
+
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -40,6 +46,11 @@ public class MotorControlActivity extends Activity {
     private static final int REQUEST_CONNECT_DEVICE = 1;
     private static final int REQUEST_ENABLE_BT = 2;
 
+    private static final int DIALOG_YES_NO_MESSAGE = 0;
+    
+    private Timer   mTimer   = null;
+    private Handler mTimerHandler = new Handler();
+    
     // Layout Views
     private TextView mTitle;
 
@@ -79,6 +90,48 @@ public class MotorControlActivity extends Activity {
         }
     
     }
+    @Override
+    public void finish()
+    {
+        showDialog(DIALOG_YES_NO_MESSAGE);
+    }
+
+    public void appEnd()
+    {
+        super.finish();
+    }
+
+    @Override
+    protected Dialog onCreateDialog(int id)
+    {
+        switch(id)
+        {
+        case DIALOG_YES_NO_MESSAGE:
+            return new AlertDialog.Builder(this)
+                .setTitle("終了確認")
+                .setMessage("アプリを終了しますか？")
+                .setPositiveButton("OK", 
+                    new DialogInterface.OnClickListener()
+                    {
+                        public void onClick(DialogInterface dialog, int whichButton)
+                        {
+                            // アプリ終了
+                            appEnd();
+                        }
+                    })
+                .setNegativeButton("CANCEL", 
+                    new DialogInterface.OnClickListener()
+                    {
+                        public void onClick(DialogInterface dialog, int whichButton)
+                        {
+                        }
+                    })
+                .create();
+            default:
+                break;
+        }
+        return null;
+    }
 
     @Override
     public void onStart() {
@@ -111,6 +164,28 @@ public class MotorControlActivity extends Activity {
         }
     }
 
+    public void starttimer(){
+        if(mTimer == null){
+            mTimer = new Timer(true);
+            mTimer.schedule( new TimerTask(){
+                @Override
+                public void run() {
+                    // mHandlerを通じてUI Threadへ処理をキューイング
+                	mTimerHandler.post( new Runnable() {
+                        public void run() {
+                            mView.TimerSendCmd();     
+                        }
+                    });
+                }
+            }, 200, 200);
+        }
+    }
+    public void stoptimer(){
+        if(mTimer != null){
+            mTimer.cancel();
+            mTimer = null;
+        }
+    }
 
     private void setupBT() {
 
@@ -298,8 +373,7 @@ public class MotorControlActivity extends Activity {
             canvas.drawLine(width, 0, width, disHeight,paint);
             canvas.drawLine(width*2, 0, width*2, disHeight,paint);
 
-            for(int iy = 0;iy < Y_COUNT+1;iy++)
-            {
+            for(int iy = 0;iy < Y_COUNT+1;iy++){
                 canvas.drawLine(0, height*iy, width, height*iy,paint);
                 canvas.drawLine(width*2, height*iy, disWidth, height*iy,paint);
             }
@@ -309,13 +383,14 @@ public class MotorControlActivity extends Activity {
 
             Rect rect2 = new Rect(width*2, height*(m2+10), disWidth, height*((m2+10)+1));
             canvas.drawRect(rect2, paint);
-            
-            
+        }
+
+        public void TimerSendCmd() {
+    		SendCmd(m2,m1);
         }
 
         public void SendCmd(int m1, int m2) {
-    		if((sendm1 != m1)||(sendm2 != m2))
-    		{
+    		if((sendm1 != m1)||(sendm2 != m2)){
     			sendMessage(String.format("m%+03d%+03d", m1*-1,m2*-1));
         		sendm1 = m1;
         		sendm2 = m2;
@@ -325,28 +400,25 @@ public class MotorControlActivity extends Activity {
         @Override
         public boolean onTouchEvent(MotionEvent ev) {
 
-        	long eTime = ev.getEventTime();
         	int eAction = ev.getAction() & MotionEvent.ACTION_MASK;
         	int eActionId = (ev.getAction() & MotionEvent.ACTION_POINTER_ID_MASK) >> MotionEvent.ACTION_POINTER_ID_SHIFT;
 	        int pointerCount = ev.getPointerCount();
 
-        	if(eAction == MotionEvent.ACTION_UP)
-        	{
+        	if(eAction == MotionEvent.ACTION_UP){
     			m1 = 0;
     			m2 = 0;
-		        invalidate();        		
-        	}else if(eAction == MotionEvent.ACTION_POINTER_UP )
-        	{
-        		if(eActionId == id1)
-        		{
+        		TimerSendCmd();
+		        stoptimer();
+		   }else if(eAction == MotionEvent.ACTION_POINTER_UP ){
+        		if(eActionId == id1){
         			m1 = 0;
-			        invalidate();
         		}else if(eActionId == id2){
         			m2 = 0;
-			        invalidate();
         		}
-        	}else
-        	{
+        	}else{
+        	    if(eAction == MotionEvent.ACTION_DOWN){
+                    starttimer();
+        	    }
 		        for (int p = 0; p < pointerCount; p++) {
 		        	int x = (int)ev.getX(p);
 		        	int y = (int)ev.getY(p);
@@ -370,19 +442,9 @@ public class MotorControlActivity extends Activity {
 		        		id2 = p;
 		        	}
 		        }
-		        invalidate();
         	}
 //        	Log.v("motor",String.format("m%+03d%+03d", m1*-1,m2*-1));
-        	if(ev.getAction() == MotionEvent.ACTION_MOVE)
-        	{
-	        	if(Math.abs(elTime - eTime) > 20)
-	        	{
-	        		SendCmd(m1,m2);
-	        	}
-	        	elTime = eTime;
-        	}else{
-        		SendCmd(m1,m2);        		
-        	}
+	        invalidate();
         	return true;
         }
     }

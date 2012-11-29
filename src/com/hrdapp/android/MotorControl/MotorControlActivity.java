@@ -1,5 +1,7 @@
 package com.hrdapp.android.MotorControl;
 
+import java.lang.ref.WeakReference;
+
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -18,7 +20,6 @@ import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
-import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -29,7 +30,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class MotorControlActivity extends Activity {
-    private MainView mView;
 
     // Message types sent from the BluetoothChatService Handler
     public static final int MESSAGE_STATE_CHANGE = 1;
@@ -53,6 +53,7 @@ public class MotorControlActivity extends Activity {
     
     // Layout Views
     private TextView mTitle;
+    private MainView mView;
 
     // Name of the connected device
     private String mConnectedDeviceName = null;
@@ -230,51 +231,65 @@ public class MotorControlActivity extends Activity {
         }
     }
 
-    // The Handler that gets information back from the BluetoothChatService
-    private final Handler mHandler = new Handler() {
+    static class BtHandler extends Handler {
+        private final WeakReference<MotorControlActivity> mActivity; 
+
+        BtHandler(MotorControlActivity activity) {
+        	mActivity = new WeakReference<MotorControlActivity>(activity);
+        }
         @Override
-        public void handleMessage(Message msg) {
-            switch (msg.what) {
-            case MESSAGE_STATE_CHANGE:
-                switch (msg.arg1) {
-                case BluetoothMotorControlService.STATE_CONNECTED:
-                    mTitle.setText(R.string.title_connected_to);
-                    mTitle.append(mConnectedDeviceName);
-                    break;
-                case BluetoothMotorControlService.STATE_CONNECTING:
-                    mTitle.setText(R.string.title_connecting);
-                    break;
-                case BluetoothMotorControlService.STATE_LISTEN:
-                case BluetoothMotorControlService.STATE_NONE:
-                    mTitle.setText(R.string.title_not_connected);
-                    break;
-                }
+        public void handleMessage(Message msg)
+        {
+        	MotorControlActivity activity = mActivity.get();
+             if (activity != null) {
+            	 activity.handleMessage(msg);
+             }
+        }
+    }
+
+    private final Handler mHandler = new BtHandler(this);
+
+    public void handleMessage(Message msg) {
+        switch (msg.what) {
+        case MESSAGE_STATE_CHANGE:
+            switch (msg.arg1) {
+            case BluetoothMotorControlService.STATE_CONNECTED:
+                mTitle.setText(R.string.title_connected_to);
+                mTitle.append(mConnectedDeviceName);
                 break;
-            case MESSAGE_WRITE:
-//                byte[] writeBuf = (byte[]) msg.obj;
-                // construct a string from the buffer
-//                String writeMessage = new String(writeBuf);
-//                mConversationArrayAdapter.add("Me:  " + writeMessage);
+            case BluetoothMotorControlService.STATE_CONNECTING:
+                mTitle.setText(R.string.title_connecting);
                 break;
-            case MESSAGE_READ:
-//                byte[] readBuf = (byte[]) msg.obj;
-                // construct a string from the valid bytes in the buffer
-//                String readMessage = new String(readBuf, 0, msg.arg1);
-//                mConversationArrayAdapter.add(mConnectedDeviceName+":  " + readMessage);
-                break;
-            case MESSAGE_DEVICE_NAME:
-                // save the connected device's name
-                mConnectedDeviceName = msg.getData().getString(DEVICE_NAME);
-                Toast.makeText(getApplicationContext(), "Connected to "
-                               + mConnectedDeviceName, Toast.LENGTH_SHORT).show();
-                break;
-            case MESSAGE_TOAST:
-                Toast.makeText(getApplicationContext(), msg.getData().getString(TOAST),
-                               Toast.LENGTH_SHORT).show();
+            case BluetoothMotorControlService.STATE_LISTEN:
+            case BluetoothMotorControlService.STATE_NONE:
+                mTitle.setText(R.string.title_not_connected);
                 break;
             }
+            break;
+        case MESSAGE_WRITE:
+//                byte[] writeBuf = (byte[]) msg.obj;
+            // construct a string from the buffer
+//                String writeMessage = new String(writeBuf);
+//                mConversationArrayAdapter.add("Me:  " + writeMessage);
+            break;
+        case MESSAGE_READ:
+//                byte[] readBuf = (byte[]) msg.obj;
+            // construct a string from the valid bytes in the buffer
+//                String readMessage = new String(readBuf, 0, msg.arg1);
+//                mConversationArrayAdapter.add(mConnectedDeviceName+":  " + readMessage);
+            break;
+        case MESSAGE_DEVICE_NAME:
+            // save the connected device's name
+            mConnectedDeviceName = msg.getData().getString(DEVICE_NAME);
+            Toast.makeText(getApplicationContext(), "Connected to "
+                           + mConnectedDeviceName, Toast.LENGTH_SHORT).show();
+            break;
+        case MESSAGE_TOAST:
+            Toast.makeText(getApplicationContext(), msg.getData().getString(TOAST),
+                           Toast.LENGTH_SHORT).show();
+            break;
         }
-    };
+    }
 
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         switch (requestCode) {
@@ -334,9 +349,9 @@ public class MotorControlActivity extends Activity {
         int X_COUNT = 3;
         int Y_COUNT = 21;
 
-        long elTime;
-
         private Paint mPaint;
+        private Rect mRect1;
+        private Rect mRect2;
         
         int m1;
         int m2;
@@ -347,11 +362,14 @@ public class MotorControlActivity extends Activity {
 
         public MainView(Context context) {
             super(context);
-            mPaint = new Paint();
+            mPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        	mPaint.setColor(Color.argb(255, 255, 255, 255));
+
+        	mRect1 = new Rect();
+            mRect2 = new Rect();
+
             m1 = 0;
             m2 = 0;
-            
-            elTime = 0;
         }
 
         protected void onSizeChanged(int w, int h, int oldw, int oldh){
@@ -363,26 +381,20 @@ public class MotorControlActivity extends Activity {
  
         @Override
         protected void onDraw(Canvas canvas) {
-            Paint paint = new Paint();
-            paint.setColor(Color.argb(255, 255, 255, 255));
 
-            //            canvas.drawColor(Color.WHITE);
-
-            mPaint.setAntiAlias(true);
-
-            canvas.drawLine(width, 0, width, disHeight,paint);
-            canvas.drawLine(width*2, 0, width*2, disHeight,paint);
+            canvas.drawLine(width, 0, width, disHeight,mPaint);
+            canvas.drawLine(width*2, 0, width*2, disHeight,mPaint);
 
             for(int iy = 0;iy < Y_COUNT+1;iy++){
-                canvas.drawLine(0, height*iy, width, height*iy,paint);
-                canvas.drawLine(width*2, height*iy, disWidth, height*iy,paint);
+                canvas.drawLine(0, height*iy, width, height*iy,mPaint);
+                canvas.drawLine(width*2, height*iy, disWidth, height*iy,mPaint);
             }
 
-            Rect rect1 = new Rect(0, height*(m1+10), width, height*((m1+10)+1));
-            canvas.drawRect(rect1, paint);
+            mRect1.set(0, height*(m1+10), width, height*((m1+10)+1));
+            canvas.drawRect(mRect1, mPaint);
 
-            Rect rect2 = new Rect(width*2, height*(m2+10), disWidth, height*((m2+10)+1));
-            canvas.drawRect(rect2, paint);
+            mRect2.set(width*2, height*(m2+10), disWidth, height*((m2+10)+1));
+            canvas.drawRect(mRect2, mPaint);
         }
 
         public void TimerSendCmd() {
